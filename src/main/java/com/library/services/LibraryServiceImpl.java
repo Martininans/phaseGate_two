@@ -19,24 +19,25 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
-import java.util.Objects;
+import java.util.List;
 import java.util.Optional;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class LibraryServiceImpl implements LibraryService {
+
     private final BookRepository bookRepository;
     private final UserRepository userRepository;
     private final BorrowedBookRepository borrowedBookRepository;
 
     @Override
     public AppResponse addBook(AddBookDto bookDto, String username) {
-        try {
-            if (!hasPermissionToAddORUpdateBook(username)) {
-                return new AppResponse("User not authorized to add books", HttpStatus.FORBIDDEN.toString(), null);
-            }
+        if (!hasPermissionToAddOrUpdateBook(username)) {
+            return new AppResponse("User not authorized to add books", HttpStatus.FORBIDDEN.toString(), null);
+        }
 
+        try {
             Book book = new Book();
             book.setTitle(bookDto.getTitle());
             book.setAuthor(bookDto.getAuthor());
@@ -45,21 +46,20 @@ public class LibraryServiceImpl implements LibraryService {
             book.setCategory(bookDto.getCategory());
 
             Book newBook = bookRepository.save(book);
-
             return new AppResponse("Book added successfully", HttpStatus.OK.toString(), newBook);
         } catch (Exception e) {
+            log.error("Error occurred while adding book", e);
             return new AppResponse("Error occurred while adding book: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR.toString(), null);
         }
     }
 
-
     @Override
     public AppResponse updateBook(AddBookDto bookDto, String username, Long bookId) {
-        try {
-            if (!hasPermissionToAddORUpdateBook(username)) {
-                return new AppResponse("User not authorized to update books", HttpStatus.FORBIDDEN.toString(), null);
-            }
+        if (!hasPermissionToAddOrUpdateBook(username)) {
+            return new AppResponse("User not authorized to update books", HttpStatus.FORBIDDEN.toString(), null);
+        }
 
+        try {
             Book book = bookRepository.findById(bookId).orElse(null);
             if (book == null) {
                 return new AppResponse("Book not found", HttpStatus.NOT_FOUND.toString(), null);
@@ -72,7 +72,6 @@ public class LibraryServiceImpl implements LibraryService {
             book.setCategory(bookDto.getCategory());
 
             Book updatedBook = bookRepository.save(book);
-
             return new AppResponse("Book updated successfully", HttpStatus.OK.toString(), updatedBook);
         } catch (Exception e) {
             log.error("Error occurred while updating book", e);
@@ -80,18 +79,16 @@ public class LibraryServiceImpl implements LibraryService {
         }
     }
 
-
     @Override
     public AppResponse borrowBook(String username, Long bookId, String librarianUsername) {
+        if (!hasPermissionToBorrowBook(username, bookId)) {
+            return new AppResponse("User not eligible to borrow books", HttpStatus.FORBIDDEN.toString(), null);
+        }
 
-        try{
-            if (!hasPermissionToUpdateBook(username, bookId)) {
-                return new AppResponse("User not eligible to borrow books", HttpStatus.FORBIDDEN.toString(), null);
-            }
-
+        try {
             Optional<User> librarian = userRepository.findByUsername(librarianUsername);
-            if (librarian.isEmpty() || !librarian.get().getType().equals(UserType.LIBRARIAN)) {
-                return new AppResponse("Librarian data not found with username: " + librarianUsername, HttpStatus.BAD_REQUEST.toString(), null);
+            if (librarian.isEmpty() || !librarian.get().getType().equals(UserType.MEMBER)) {
+                return new AppResponse("Librarian not found or not authorized", HttpStatus.BAD_REQUEST.toString(), null);
             }
 
             Book book = bookRepository.findById(bookId).orElse(null);
@@ -108,24 +105,23 @@ public class LibraryServiceImpl implements LibraryService {
             borrowedBooks.setLibrarianUserName(librarianUsername);
 
             BorrowedBooks borrowedBook = borrowedBookRepository.save(borrowedBooks);
-
             return new AppResponse("Book borrowed successfully", HttpStatus.OK.toString(), borrowedBook);
-        }catch (Exception e){
-            return new AppResponse("Error while borrowing book", HttpStatus.INTERNAL_SERVER_ERROR.toString(), null);
+        } catch (Exception e) {
+            log.error("Error occurred while borrowing book", e);
+            return new AppResponse("Error while borrowing book: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR.toString(), null);
         }
-
     }
 
     @Override
     public AppResponse returnBook(String username, Long bookId) {
-        try {
-            if (!canReturnBooks(username, bookId)) {
-                return new AppResponse("User not eligible to return books", HttpStatus.FORBIDDEN.toString(), null);
-            }
+        if (!canReturnBooks(username, bookId)) {
+            return new AppResponse("User not eligible to return books", HttpStatus.FORBIDDEN.toString(), null);
+        }
 
+        try {
             BorrowedBooks borrowedBook = borrowedBookRepository.findByBookIdAndBorrowerUserName(bookId, username);
             if (borrowedBook == null) {
-                return new AppResponse("Borrowed book record not found for the given ID and username", HttpStatus.NOT_FOUND.toString(), null);
+                return new AppResponse("Borrowed book record not found", HttpStatus.NOT_FOUND.toString(), null);
             }
 
             borrowedBook.setHasBeenReturned(true);
@@ -133,7 +129,7 @@ public class LibraryServiceImpl implements LibraryService {
 
             return new AppResponse("Book returned successfully", HttpStatus.OK.toString(), borrowedBook);
         } catch (Exception e) {
-            log.error("Error occurred while returning the book with ID: " + bookId, e);
+            log.error("Error occurred while returning the book", e);
             return new AppResponse("Error occurred while returning the book: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR.toString(), null);
         }
     }
@@ -152,7 +148,7 @@ public class LibraryServiceImpl implements LibraryService {
                     borrowedBooksPage.getTotalElements()
             );
 
-            return new AppResponse("Paginated list of borrowed books fetched successfully", "00", response);
+            return new AppResponse("Paginated list of borrowed books fetched successfully", HttpStatus.OK.toString(), response);
         } catch (Exception e) {
             log.error("Error occurred while fetching paginated borrowed books", e);
             return new AppResponse("Error occurred while fetching paginated borrowed books: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR.toString(), null);
@@ -173,54 +169,39 @@ public class LibraryServiceImpl implements LibraryService {
                     bookPage.getTotalElements()
             );
 
-            return new AppResponse("Paginated list of books fetched successfully", "00", response);
+            return new AppResponse("Paginated list of books fetched successfully", HttpStatus.OK.toString(), response);
         } catch (Exception e) {
             log.error("Error occurred while fetching paginated books", e);
             return new AppResponse("Error occurred while fetching paginated books: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR.toString(), null);
         }
     }
 
+    private boolean hasPermissionToAddOrUpdateBook(String username) {
+        List<User> userList = userRepository.findAll();
+        log.info("users:   {}", userList);
+        Optional<User> currentUserOpt = userRepository.findByUsername(username);
+        log.info("user:   {}",currentUserOpt);
 
-    private boolean hasPermissionToAddORUpdateBook(String username) {
-        User currentUser = userRepository.findByUsername(username).orElse(null);
-        assert currentUser != null;
-        boolean hasPermissionToAddBook = false;
-        if (currentUser.getType().equals(UserType.LIBRARIAN)) {
-            hasPermissionToAddBook = true;
-        }
-
-        return hasPermissionToAddBook;
+        return currentUserOpt.map(user -> user.getType().equals("ADMIN")).orElse(false);
     }
 
-    private boolean hasPermissionToUpdateBook(String username, Long bookIs) {
-        User currentUser = userRepository.findByUsername(username).orElse(null);
-        assert currentUser != null;
+    private boolean hasPermissionToBorrowBook(String username, Long bookId) {
+        Optional<User> currentUserOpt = userRepository.findByUsername(username);
+        Optional<Book> bookOpt = bookRepository.findById(bookId);
+        Optional<BorrowedBooks> borrowedBooksOpt = Optional.ofNullable(borrowedBookRepository.findByBookIdAndBorrowerUserName(bookId, username));
 
-        Book book = bookRepository.findById(bookIs).orElse(null);
-
-        BorrowedBooks borrowedBooks = borrowedBookRepository.findByBookIdAndBorrowerUserName(bookIs, username);
-
-        boolean hasPermissionToBorrowBook = false;
-        if (!currentUser.getType().equals(UserType.LIBRARIAN) && (Objects.isNull(borrowedBooks) || borrowedBooks.isHasBeenReturned()) && !Objects.nonNull(book)) {
-            hasPermissionToBorrowBook = true;
-        }
-
-        return hasPermissionToBorrowBook;
+        return currentUserOpt.map(user -> !user.getType().equals(UserType.MEMBER)
+                && (borrowedBooksOpt.isEmpty() || borrowedBooksOpt.get().isHasBeenReturned())
+                && bookOpt.isPresent()).orElse(false);
     }
 
-    private boolean canReturnBooks(String username, Long bookIs) {
-        User currentUser = userRepository.findByUsername(username).orElse(null);
-        assert currentUser != null;
+    private boolean canReturnBooks(String username, Long bookId) {
+        Optional<User> currentUserOpt = userRepository.findByUsername(username);
+        Optional<Book> bookOpt = bookRepository.findById(bookId);
+        Optional<BorrowedBooks> borrowedBooksOpt = Optional.ofNullable(borrowedBookRepository.findByBookIdAndBorrowerUserName(bookId, username));
 
-        Book book = bookRepository.findById(bookIs).orElse(null);
-
-        BorrowedBooks borrowedBooks = borrowedBookRepository.findByBookIdAndBorrowerUserName(bookIs, username);
-
-        boolean hasPermissionToReturnBook = false;
-        if (!currentUser.getType().equals(UserType.LIBRARIAN) && (!Objects.isNull(borrowedBooks) && !borrowedBooks.isHasBeenReturned()) && !Objects.nonNull(book)) {
-            hasPermissionToReturnBook = true;
-        }
-
-        return hasPermissionToReturnBook;
+        return currentUserOpt.map(user -> !user.getType().equals(UserType.MEMBER)
+                && borrowedBooksOpt.map(BorrowedBooks::isHasBeenReturned).orElse(false)
+                && bookOpt.isPresent()).orElse(false);
     }
 }

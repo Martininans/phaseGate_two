@@ -3,6 +3,7 @@ package com.library.services;
 import com.library.model.entities.User;
 import com.library.model.request.CreateUserDto;
 import com.library.model.request.SignInDto;
+import com.library.model.request.updateUserDto;
 import com.library.model.response.AppResponse;
 import com.library.repositories.BookRepository;
 import com.library.repositories.UserRepository;
@@ -36,7 +37,7 @@ public class UserServiceImpl implements UserService {
             }
 
             User newUser = User.builder()
-                    .type(user.getType())
+                    .type(user.getType().toString())
                     .firstName(user.getFirstName())
                     .gender(user.getGender())
                     .lastName(user.getLastName())
@@ -52,37 +53,36 @@ public class UserServiceImpl implements UserService {
         }
     }
 
+
     @Override
-    public AppResponse updateUser(CreateUserDto user) {
+    public AppResponse updateUser(updateUserDto user) {
         try {
             if(user == null){
-                return  new AppResponse("Request object cannot be null", HttpStatus.BAD_REQUEST.toString(), null);
+                return new AppResponse("Request object cannot be null", HttpStatus.BAD_REQUEST.toString(), null);
             }
-
             Optional<User> existingUser = userRepository.findByUsername(user.getUsername());
             if(existingUser.isEmpty()){
-                return  new AppResponse("User does not exist", HttpStatus.BAD_REQUEST.toString(), null);
+                return new AppResponse("User does not exist", HttpStatus.BAD_REQUEST.toString(), null);
             }
-
-            if(user.getType() != null){
-                existingUser.get().setType(user.getType());
+            User existingUserObject = existingUser.get();
+            if(user.getUsername() != null){
+                existingUserObject.setUsername(user.getUsername());
+            }
+            if(user.getPassword() != null){
+                existingUserObject.setPassword(user.getPassword());
             }
             if(user.getFirstName() != null){
-                existingUser.get().setFirstName(user.getFirstName());
+                existingUserObject.setFirstName(user.getFirstName());
             }
-
             if(user.getLastName() != null){
-                existingUser.get().setLastName(user.getLastName());
+                existingUserObject.setLastName(user.getLastName());
             }
-
-            userRepository.save(existingUser.get());
-
-            return new AppResponse("User updated successfully", "00", existingUser);
+            userRepository.save(existingUserObject);
+            return new AppResponse("User updated successfully", "00", existingUserObject);
         }catch(Exception e){
             return new AppResponse(e.getMessage(), HttpStatus.BAD_REQUEST.toString(), null);
         }
     }
-
     @Override
     public AppResponse deleteUser(Long id) {
         try{

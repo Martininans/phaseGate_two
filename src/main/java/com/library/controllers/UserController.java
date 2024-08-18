@@ -3,6 +3,7 @@ package com.library.controllers;
 import com.library.model.entities.User;
 import com.library.model.request.CreateUserDto;
 import com.library.model.request.SignInDto;
+import com.library.model.request.updateUserDto;
 import com.library.model.response.AppResponse;
 import com.library.services.UserService;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,7 @@ import java.util.List;
 @RequiredArgsConstructor
 @RestController
 @RequestMapping("/user")
+@CrossOrigin
 public class UserController {
     private final UserService userService;
 
@@ -30,7 +32,7 @@ public class UserController {
     }
 
     @PutMapping("/update")
-    public AppResponse updateUser(@RequestBody  CreateUserDto data) {
+    public AppResponse updateUser(@RequestBody updateUserDto data) {
         return userService.updateUser(data);
     }
 
